@@ -5,7 +5,7 @@ import plotly.express as px
 # Page setup
 st.set_page_config(page_title="Shift Dashboard", layout="wide")
 
-st.title("📊 Extra Shift Not Billed Dashboard")
+st.title("SILA - Extra Shift Not Billed Dashboard")
 
 # Upload file
 file = st.file_uploader("Upload Shift Data File", type=["xlsx"])
