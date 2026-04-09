@@ -2,123 +2,152 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-# Page setup
-st.set_page_config(page_title="Shift Dashboard", layout="wide")
+# -------------------- PAGE SETUP --------------------
+st.set_page_config(page_title="SILA Dashboard", layout="wide")
 
-st.title("📊 Extra Shift Not Billed Dashboard")
+st.title("🏢 SILA - Extra Shift Not Billed Dashboard")
 
-# Upload file
-file = st.file_uploader("Upload Shift Data File", type=["xlsx"])
+# -------------------- FILE UPLOAD --------------------
+file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
 if file:
+
     df = pd.read_excel(file)
 
-    # Clean column names
+    # -------------------- CLEAN COLUMN NAMES --------------------
     df.columns = df.columns.str.strip()
 
-    # Required columns
+    # -------------------- REQUIRED COLUMNS --------------------
     required_cols = [
-        "Site Code", "Site Name", "State", "Designation Name",
-        "Year", "Month", "Extra Shifts Not Billed", "Per Day Wages"
+        "Site Name", "State", "Month", "Year",
+        "Designation Name", "Extra Shifts Not Billed", "CTC Rate"
     ]
 
-    if not all(col in df.columns for col in required_cols):
-        st.error("❌ Column names not matching. Please check Excel headers.")
-    else:
-        # ✅ Fix numeric conversion (IMPORTANT)
-        df["Extra Shifts Not Billed"] = pd.to_numeric(
-            df["Extra Shifts Not Billed"].astype(str).str.replace(",", ""),
-            errors="coerce"
-        ).fillna(0)
+    # Check columns
+    missing = [col for col in required_cols if col not in df.columns]
 
-        df["Per Day Wages"] = pd.to_numeric(
-            df["Per Day Wages"].astype(str).str.replace(",", ""),
-            errors="coerce"
-        ).fillna(0)
+    if missing:
+        st.error(f"❌ Missing columns: {missing}")
+        st.stop()
 
-        # ✅ Calculate Loss
-        df["Loss Amount"] = df["Extra Shifts Not Billed"] * df["Per Day Wages"]
+    # -------------------- DATA CLEANING --------------------
+    df["Extra Shifts Not Billed"] = pd.to_numeric(
+        df["Extra Shifts Not Billed"], errors="coerce"
+    ).fillna(0)
 
-        # 🔍 Filters FIRST
-        st.sidebar.header("Filters")
+    df["CTC Rate"] = pd.to_numeric(
+        df["CTC Rate"], errors="coerce"
+    ).fillna(0)
 
-        year = st.sidebar.multiselect("Select Year", sorted(df["Year"].dropna().unique()))
-        month = st.sidebar.multiselect("Select Month", sorted(df["Month"].dropna().unique()))
-        state = st.sidebar.multiselect("Select State", sorted(df["State"].dropna().unique()))
-        site = st.sidebar.multiselect("Select Site", sorted(df["Site Name"].dropna().unique()))
+    df["Month"] = pd.to_numeric(df["Month"], errors="coerce")
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
 
-        # Apply filters
-        if year:
-            df = df[df["Year"].isin(year)]
+    # Remove invalid rows
+    df = df.dropna(subset=["Extra Shifts Not Billed", "CTC Rate"])
 
-        if month:
-            df = df[df["Month"].isin(month)]
+    # -------------------- CALCULATIONS --------------------
+    df["Total Loss"] = df["Extra Shifts Not Billed"] * df["CTC Rate"]
 
-        if state:
-            df = df[df["State"].isin(state)]
+    # -------------------- FILTERS --------------------
+    st.sidebar.header("🔍 Filters")
 
-        if site:
-            df = df[df["Site Name"].isin(site)]
+    year = st.sidebar.multiselect("Year", sorted(df["Year"].dropna().unique()))
+    month = st.sidebar.multiselect("Month", sorted(df["Month"].dropna().unique()))
+    state = st.sidebar.multiselect("State", sorted(df["State"].dropna().unique()))
+    site = st.sidebar.multiselect("Site", sorted(df["Site Name"].dropna().unique()))
+    designation = st.sidebar.multiselect("Designation", sorted(df["Designation Name"].dropna().unique()))
 
-        # 🔘 Toggle (optional)
-        show_all = st.sidebar.checkbox("Show All Data", value=False)
+    # Apply filters
+    filtered_df = df.copy()
 
-        # Remove zero values AFTER filters
-        if not show_all:
-            df = df[df["Extra Shifts Not Billed"] > 0]
+    if year:
+        filtered_df = filtered_df[filtered_df["Year"].isin(year)]
+    if month:
+        filtered_df = filtered_df[filtered_df["Month"].isin(month)]
+    if state:
+        filtered_df = filtered_df[filtered_df["State"].isin(state)]
+    if site:
+        filtered_df = filtered_df[filtered_df["Site Name"].isin(site)]
+    if designation:
+        filtered_df = filtered_df[filtered_df["Designation Name"].isin(designation)]
 
-        # 🚫 Stop if no data
-        if df.empty:
-            st.warning("✅ No extra shifts found for selected filters")
-            st.stop()
+    # Remove zero values
+    filtered_df = filtered_df[filtered_df["Extra Shifts Not Billed"] > 0]
 
-        # 📊 KPIs
-        col1, col2 = st.columns(2)
+    # -------------------- EMPTY CHECK --------------------
+    if filtered_df.empty:
+        st.warning("✅ No extra shifts found for selected filters")
+        st.stop()
 
-        col1.metric(
-            "Total Extra Shifts",
-            round(df["Extra Shifts Not Billed"].sum(), 2)
-        )
+    # -------------------- KPI --------------------
+    col1, col2 = st.columns(2)
 
-        col2.metric(
-            "Total Loss ₹",
-            round(df["Loss Amount"].sum(), 2)
-        )
+    col1.metric("Total Extra Shifts", round(filtered_df["Extra Shifts Not Billed"].sum(), 2))
+    col2.metric("Total Loss ₹", round(filtered_df["Total Loss"].sum(), 2))
 
-        # 📊 Site-wise chart
-        fig1 = px.bar(
-            df,
-            x="Site Name",
-            y="Extra Shifts Not Billed",
-            color="Designation Name",
-            title="Site-wise Extra Shifts Not Billed"
-        )
-        st.plotly_chart(fig1, use_container_width=True)
+    # -------------------- SITE-WISE CHART --------------------
+    site_data = filtered_df.groupby("Site Name")["Extra Shifts Not Billed"].sum().reset_index()
 
-        # 📊 State-wise chart
-        state_df = df.groupby("State", as_index=False)["Extra Shifts Not Billed"].sum()
+    fig1 = px.bar(
+        site_data,
+        x="Site Name",
+        y="Extra Shifts Not Billed",
+        title="📊 Site-wise Extra Shifts Not Billed"
+    )
 
-        fig2 = px.bar(
-            state_df,
-            x="State",
-            y="Extra Shifts Not Billed",
-            title="State-wise Extra Shifts"
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig1, use_container_width=True)
 
-        # 📈 Monthly trend
-        trend_df = df.groupby(["Year", "Month"], as_index=False)["Extra Shifts Not Billed"].sum()
+    # -------------------- STATE-WISE --------------------
+    state_data = filtered_df.groupby("State")["Extra Shifts Not Billed"].sum().reset_index()
 
-        fig3 = px.line(
-            trend_df,
-            x="Month",
-            y="Extra Shifts Not Billed",
-            color="Year",
-            markers=True,
-            title="Monthly Trend"
-        )
-        st.plotly_chart(fig3, use_container_width=True)
+    fig2 = px.bar(
+        state_data,
+        x="State",
+        y="Extra Shifts Not Billed",
+        title="📍 State-wise Extra Shifts"
+    )
 
-        # 📋 Table
-        st.subheader("Detailed Data")
-        st.dataframe(df)
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # -------------------- DESIGNATION-WISE --------------------
+    desg_data = filtered_df.groupby("Designation Name")["Extra Shifts Not Billed"].sum().reset_index()
+
+    fig3 = px.bar(
+        desg_data,
+        x="Designation Name",
+        y="Extra Shifts Not Billed",
+        title="👔 Designation-wise Extra Shifts"
+    )
+
+    st.plotly_chart(fig3, use_container_width=True)
+
+    # -------------------- MONTHLY TREND --------------------
+    trend_data = filtered_df.groupby(["Year", "Month"])["Extra Shifts Not Billed"].sum().reset_index()
+
+    fig4 = px.line(
+        trend_data,
+        x="Month",
+        y="Extra Shifts Not Billed",
+        color="Year",
+        markers=True,
+        title="📈 Monthly Trend"
+    )
+
+    st.plotly_chart(fig4, use_container_width=True)
+
+    # -------------------- DOWNLOAD BUTTON --------------------
+    st.subheader("📥 Download Filtered Report")
+
+    csv = filtered_df.to_csv(index=False).encode('utf-8')
+
+    st.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name="SILA_Shift_Report.csv",
+        mime="text/csv"
+    )
+
+    # -------------------- TABLE --------------------
+    st.subheader("📋 Detailed Data")
+
+    st.dataframe(filtered_df)
