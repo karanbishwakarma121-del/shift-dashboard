@@ -25,7 +25,7 @@ if file:
     if not all(col in df.columns for col in required_cols):
         st.error("❌ Column names not matching. Please check Excel headers.")
     else:
-        # ✅ Fix numeric conversion (IMPORTANT)
+        # ✅ Fix numeric conversion
         df["Extra Shifts Not Billed"] = pd.to_numeric(
             df["Extra Shifts Not Billed"].astype(str).str.replace(",", ""),
             errors="coerce"
@@ -39,7 +39,7 @@ if file:
         # ✅ Calculate Loss
         df["Loss Amount"] = df["Extra Shifts Not Billed"] * df["Per Day Wages"]
 
-        # 🔍 Filters FIRST
+        # 🔍 Filters
         st.sidebar.header("Filters")
 
         year = st.sidebar.multiselect("Select Year", sorted(df["Year"].dropna().unique()))
@@ -60,14 +60,13 @@ if file:
         if site:
             df = df[df["Site Name"].isin(site)]
 
-        # 🔘 Toggle (optional)
+        # Toggle
         show_all = st.sidebar.checkbox("Show All Data", value=False)
 
-        # Remove zero values AFTER filters
         if not show_all:
             df = df[df["Extra Shifts Not Billed"] > 0]
 
-        # 🚫 Stop if no data
+        # Stop if no data
         if df.empty:
             st.warning("✅ No extra shifts found for selected filters")
             st.stop()
@@ -119,6 +118,19 @@ if file:
         )
         st.plotly_chart(fig3, use_container_width=True)
 
-        # 📋 Table
+        # ✅ -------------------- SUMMARY TABLE --------------------
+        st.subheader("📊 Summary - State Wise Extra Amount")
+
+        summary_df = df.groupby(
+            ["Month", "Year", "State"], as_index=False
+        )["Loss Amount"].sum()
+
+        summary_df.rename(columns={"Loss Amount": "Extra Amount"}, inplace=True)
+
+        summary_df = summary_df.sort_values(by=["Year", "Month"])
+
+        st.dataframe(summary_df, use_container_width=True)
+
+        # 📋 Detailed Table
         st.subheader("Detailed Data")
         st.dataframe(df)
